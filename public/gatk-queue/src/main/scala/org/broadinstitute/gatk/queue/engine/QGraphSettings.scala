@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2012 The Broad Institute
+* Copyright 2012-2015 Broad Institute, Inc.
 * 
 * Permission is hereby granted, free of charge, to any person
 * obtaining a copy of this software and associated documentation
@@ -28,7 +28,7 @@ package org.broadinstitute.gatk.queue.engine
 import java.io.File
 import org.broadinstitute.gatk.queue.QSettings
 import org.broadinstitute.gatk.queue.util.{EmailSettings, SystemUtils}
-import org.broadinstitute.gatk.utils.commandline.{Advanced, ArgumentCollection, Argument}
+import org.broadinstitute.gatk.utils.commandline.{ClassType, Advanced, ArgumentCollection, Argument}
 
 /**
  * Command line options for a QGraph.
@@ -45,6 +45,9 @@ class QGraphSettings {
 
   @Argument(fullName="qsub", shortName="qsub", doc="Equivalent to -jobRunner GridEngine", required=false)
   var qsub = false
+
+  @Argument(fullName="qsub-broad", shortName="qsub-broad", doc="Equivalent to -qsub, but uses GridEngine parameters specific to the Broad GridEngine cluster", required=false)
+  var qsubBroad = false
 
   @Argument(fullName="status",shortName="status",doc="Get status of jobs for the qscript",required=false)
   var getStatus = false
@@ -74,8 +77,13 @@ class QGraphSettings {
   var jobReportFile: String = _
 
   @Advanced
-  @Argument(fullName="disableJobReport", shortName="disabpleJobReport", doc="If provided, we will not create a job report", required=false)
+  @Argument(fullName="disableJobReport", shortName="disableJobReport", doc="If provided, we will not create a job report", required=false)
   var disableJobReport: Boolean = false
+
+  @Advanced
+  @ClassType(classOf[Int])
+  @Argument(fullName="maximumNumberOfJobsToRunConcurrently", shortName="maxConcurrentRun", doc="The maximum number of jobs to start at any given time. (Default is no limit)", required=false)
+  var maximumNumberOfConcurrentJobs: Option[Int] = None
 
   @ArgumentCollection
   val emailSettings = new EmailSettings

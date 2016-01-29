@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2012 The Broad Institute
+* Copyright 2012-2015 Broad Institute, Inc.
 * 
 * Permission is hereby granted, free of charge, to any person
 * obtaining a copy of this software and associated documentation
@@ -395,12 +395,18 @@ class QGraph extends Logging {
    */
   private def runJobs() {
     try {
-      if (settings.bsub)
+      if (settings.bsub) {
         settings.jobRunner = "Lsf706"
-      else if (settings.qsub)
+      }
+      else if (settings.qsub || settings.qsubBroad) {
         settings.jobRunner = "GridEngine"
-      else if (settings.jobRunner == null)
+        if ( settings.qsubBroad ) {
+          settings.qSettings.useBroadClusterSettings = true
+        }
+      }
+      else if (settings.jobRunner == null) {
         settings.jobRunner = "Shell"
+      }
       commandLineManager = commandLinePluginManager.createByName(settings.jobRunner)
 
       for (mgr <- managers) {
@@ -428,7 +434,20 @@ class QGraph extends Logging {
         var doneJobs = Set.empty[FunctionEdge]
         var failedJobs = Set.empty[FunctionEdge]
 
-        while (running && readyJobs.size > 0 && !readyRunningCheck(lastRunningCheck)) {
+        def startJobs: Boolean = {
+
+          def canRunMoreConcurrentJobs: Boolean =
+            if(settings.maximumNumberOfConcurrentJobs.isDefined)
+              runningJobs.size + startedJobs.size < settings.maximumNumberOfConcurrentJobs.get
+            else
+              true
+
+          running && readyJobs.size > 0 &&
+            !readyRunningCheck(lastRunningCheck) &&
+            canRunMoreConcurrentJobs
+        }
+
+        while (startJobs) {
           val edge = readyJobs.head
           edge.runner = newRunner(edge.function)
           edge.start()

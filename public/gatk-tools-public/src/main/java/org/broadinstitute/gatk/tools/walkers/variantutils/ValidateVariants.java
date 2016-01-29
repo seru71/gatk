@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2012 The Broad Institute
+* Copyright 2012-2015 Broad Institute, Inc.
 * 
 * Permission is hereby granted, free of charge, to any person
 * obtaining a copy of this software and associated documentation
@@ -31,9 +31,9 @@ import org.broadinstitute.gatk.utils.commandline.ArgumentCollection;
 import org.broadinstitute.gatk.engine.CommandLineGATK;
 import org.broadinstitute.gatk.engine.arguments.DbsnpArgumentCollection;
 import org.broadinstitute.gatk.engine.arguments.StandardVariantContextInputArgumentCollection;
-import org.broadinstitute.gatk.engine.contexts.AlignmentContext;
-import org.broadinstitute.gatk.engine.contexts.ReferenceContext;
-import org.broadinstitute.gatk.engine.refdata.RefMetaDataTracker;
+import org.broadinstitute.gatk.utils.contexts.AlignmentContext;
+import org.broadinstitute.gatk.utils.contexts.ReferenceContext;
+import org.broadinstitute.gatk.utils.refdata.RefMetaDataTracker;
 import org.broadinstitute.gatk.engine.walkers.Reference;
 import org.broadinstitute.gatk.engine.walkers.RodWalker;
 import org.broadinstitute.gatk.engine.walkers.Window;
@@ -49,10 +49,10 @@ import java.util.*;
 
 
 /**
- * Validates a VCF file with an extra strict set of criteria.
+ * Validate a VCF file with an extra strict set of criteria
  *
  * <p>
- * ValidateVariants is a GATK tool that takes a VCF file and validates much of the information inside it.
+ * This tool is designed to validate much of the information inside a VCF file.
  * In addition to standard adherence to the VCF specification, this tool performs extra strict validations to ensure
  * the information contained within the file is correct. These include:
  * </p><p>
@@ -80,43 +80,52 @@ import java.util.*;
  * A variant set to validate using <code>-V</code> or <code>--variant</code> as shown below.
  * </p>
  *
- * <h3>Examples</h3>
+ * <h3>Usage examples</h3>
  *
- * <p>To perform VCF format and all strict validations: </p>
- *
+ * <h4>To perform VCF format tests and all strict validations</h4>
  * <pre>
- * java -Xmx2g -jar GenomeAnalysisTK.jar \
- *   -R ref.fasta \
+ * java -jar GenomeAnalysisTK.jar \
  *   -T ValidateVariants \
- *   --variant input.vcf \
+ *   -R reference.fasta \
+ *   -V input.vcf \
  *   --dbsnp dbsnp.vcf
  * </pre>
  *
- * <p>To perform only VCF format tests:</p>
- *
+ * <h4>To perform VCF format tests and all strict validations with the VCFs containing alleles <= 208 bases</h4>
  * <pre>
- * java -Xmx2g -jar GenomeAnalysisTK.jar \
- *   -R ref.fasta \
+ * java -jar GenomeAnalysisTK.jar \
  *   -T ValidateVariants \
- *   <b>--validationTypeToExclude ALL</b> \
- *   --variant input.vcf
+ *   -R reference.fasta \
+ *   -V input.vcf \
+ *   --dbsnp dbsnp.vcf
+ *   --reference_window_stop 208
  * </pre>
  *
- * <p>To perform all validations except the strict <i>ALLELE</i> validation:</p>
- *
+ * <h4>To perform only VCF format tests</h4>
  * <pre>
- * java -Xmx2g -jar GenomeAnalysisTK.jar \
- *   -R ref.fasta \
+ * java -jar GenomeAnalysisTK.jar \
  *   -T ValidateVariants \
+ *   -R reference.fasta \
+ *   -V input.vcf \
+ *   <b>--validationTypeToExclude ALL</b>
+ * </pre>
+ *
+ * <h4>To perform all validations except the strict <i>ALLELE</i> validation</h4>
+ * <pre>
+ * java -jar GenomeAnalysisTK.jar \
+ *   -T ValidateVariants \
+ *   -R reference.fasta \
+ *   -V input.vcf \
  *   <b>--validationTypeToExclude ALLELES</b>
- *   --variant input.vcf \
- *   --dbsnp dbsnp.vcf
  * </pre>
  *
  */
 @DocumentedGATKFeature( groupName = HelpConstants.DOCS_CAT_VALIDATION, extraDocs = {CommandLineGATK.class} )
 @Reference(window=@Window(start=0,stop=100))
 public class ValidateVariants extends RodWalker<Integer, Integer> {
+
+    // Log message for a reference allele that is too long
+    protected static final String REFERENCE_ALLELE_TOO_LONG_MSG = "Reference allele is too long";
 
     @ArgumentCollection
     protected StandardVariantContextInputArgumentCollection variantCollection = new StandardVariantContextInputArgumentCollection();
@@ -185,6 +194,9 @@ public class ValidateVariants extends RodWalker<Integer, Integer> {
 
     private File file = null;
 
+    // Stop of the expanded window for which the reference context should be provided, relative to the locus.
+    private int referenceWindowStop;
+
     /**
      * Contains final set of validation to apply.
      */
@@ -193,6 +205,7 @@ public class ValidateVariants extends RodWalker<Integer, Integer> {
     public void initialize() {
         file = new File(variantCollection.variants.getSource());
         validationTypes = calculateValidationTypesToApply(excludeTypes);
+        referenceWindowStop = getToolkit().getArguments().reference_window_stop;
     }
 
     public Integer map(RefMetaDataTracker tracker, ReferenceContext ref, AlignmentContext context) {
@@ -224,8 +237,11 @@ public class ValidateVariants extends RodWalker<Integer, Integer> {
         // get the true reference allele
         final Allele reportedRefAllele = vc.getReference();
         final int refLength = reportedRefAllele.length();
-        if ( refLength > 100 ) {
-            logger.info(String.format("Reference allele is too long (%d) at position %s:%d; skipping that record.", refLength, vc.getChr(), vc.getStart()));
+
+        // reference length is greater than the reference window stop before and after expansion
+        if ( refLength > 100 && refLength > referenceWindowStop ) {
+            logger.info(String.format("%s (%d) at position %s:%d; skipping that record. Set --referenceWindowStop >= %d",
+                    REFERENCE_ALLELE_TOO_LONG_MSG, refLength, vc.getChr(), vc.getStart(), refLength));
             return;
         }
 
@@ -263,7 +279,7 @@ public class ValidateVariants extends RodWalker<Integer, Integer> {
      * @return never {@code null} but perhaps an empty set.
      */
     private Collection<ValidationType> calculateValidationTypesToApply(final List<ValidationType> excludeTypes) {
-        if (excludeTypes.size() == 0)
+        if (excludeTypes.isEmpty())
             return Collections.singleton(ValidationType.ALL);
         final Set<ValidationType> excludeTypeSet = new LinkedHashSet<>(excludeTypes);
         if (excludeTypes.size() != excludeTypeSet.size())
